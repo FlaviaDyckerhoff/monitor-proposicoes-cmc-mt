@@ -1,0 +1,12 @@
+{
+  "name": "monitor-proposicoes-cmc-mt",
+  "version": "1.0.0",
+  "description": "Monitor automático de proposições da Câmara Municipal de Cuiabá-MT",
+  "main": "monitor.js",
+  "scripts": {
+    "start": "node monitor.js"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.0"
+  }
+}
