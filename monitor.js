@@ -6,9 +6,11 @@ const EMAIL_REMETENTE = process.env.EMAIL_REMETENTE || 'flavia@monitorlegislativ
 const EMAIL_SENHA = process.env.EMAIL_SENHA;
 const ARQUIVO_ESTADO = 'estado.json';
 const URL_BASE = 'https://legislativo.camaracuiaba.mt.gov.br/spl/consulta-producao.aspx';
+const NOME_CASA = 'Câmara Municipal de Cuiabá';
 const ANO = new Date().getFullYear();
 const ITENS_POR_PAGINA = 50;
 const MAX_PAGINAS_PRIMEIRO_RUN = 10; // 500 proposições no backlog inicial
+const MAX_TENTATIVAS_EMAIL = 3;
 
 // Tipos monitorados
 const TIPOS_MONITORADOS = [
@@ -31,6 +33,11 @@ function tipoMonitorado(tipo) {
   if (!tipo) return false;
   const t = tipo.toLowerCase().trim();
   return TIPOS_MONITORADOS.some(m => t === m || t.includes(m) || m.includes(t));
+}
+
+function absolutizarUrl(href) {
+  if (!href) return '';
+  return new URL(href.replace(/&amp;/g, '&').trim(), URL_BASE).toString();
 }
 
 // ─── Estado ───────────────────────────────────────────────────────────────────
@@ -105,6 +112,8 @@ function parseProposicoes(html) {
 
     const tituloMatch = bloco.match(/kt-widget5__title[^>]*>\s*([^<]+?)\s*<\/a>/);
     const titulo = tituloMatch ? tituloMatch[1].trim() : '-';
+    const hrefMatch = bloco.match(/<a\b[^>]*href=["\']([^"\']+)["\'][^>]*class=["\'][^"\']*kt-widget5__title/i);
+    const url = hrefMatch ? absolutizarUrl(hrefMatch[1]) : '';
 
     const tipoNumMatch = titulo.match(/^(.+?)\s+n[°º]\s*(\d+)\/\d+/);
     const tipo = tipoNumMatch ? tipoNumMatch[1].trim() : titulo;
@@ -127,7 +136,7 @@ function parseProposicoes(html) {
     const processoMatch = bloco.match(/Processo N°:<\/span>\s*<a[^>]*>([^<]+)<\/a>/);
     const processo = processoMatch ? processoMatch[1].trim() : '-';
 
-    proposicoes.push({ id, tipo, numero, ementa, data, autor, processo });
+    proposicoes.push({ id, tipo, numero, ementa, data, autor, processo, url });
   }
 
   return proposicoes;
@@ -143,6 +152,12 @@ const HEADERS_BASE = {
 };
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function isTransientEmailError(err) {
+  const responseCode = Number(err && err.responseCode);
+  const message = String((err && err.message) || '').toLowerCase();
+  return [421, 450, 451, 452].includes(responseCode) || message.includes('temporary') || message.includes('try again later');
+}
 
 async function carregarPaginaInicial() {
   const url = `${URL_BASE}?ano=${ANO}&ano_proposicao=${ANO}`;
@@ -357,22 +372,28 @@ async function enviarEmail(novas) {
     const header = `<tr><td colspan="5" style="padding:10px 8px 4px;background:#f0f4f8;font-weight:bold;color:#003366;font-size:13px;border-top:2px solid #003366">${tipo} — ${porTipo[tipo].length} proposição(ões)</td></tr>`;
     const rows = porTipo[tipo]
       .sort((a, b) => (parseInt(b.numero) || 0) - (parseInt(a.numero) || 0))
-      .map(p => `<tr>
+      .map(p => {
+        const numero = p.url
+          ? `<a href="${p.url}" style="color:#003366;text-decoration:none"><strong>${p.numero || '-'}/${ANO}</strong></a>`
+          : `<strong>${p.numero || '-'}/${ANO}</strong>`;
+
+        return `<tr>
         <td style="padding:8px;border-bottom:1px solid #eee;font-size:12px;white-space:nowrap">${p.tipo || '-'}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;white-space:nowrap"><strong>${p.numero || '-'}/${ANO}</strong></td>
+        <td style="padding:8px;border-bottom:1px solid #eee;white-space:nowrap">${numero}</td>
         <td style="padding:8px;border-bottom:1px solid #eee;font-size:12px">${p.autor || '-'}</td>
         <td style="padding:8px;border-bottom:1px solid #eee;font-size:12px;white-space:nowrap">${p.data ? p.data.substring(0, 16) : '-'}</td>
         <td style="padding:8px;border-bottom:1px solid #eee;font-size:12px">${p.ementa || '-'}</td>
-      </tr>`).join('');
+      </tr>`;
+      }).join('');
     return header + rows;
   }).join('');
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:960px;margin:0 auto">
       <h2 style="color:#003366;border-bottom:2px solid #003366;padding-bottom:8px">
-        🏛️ CMC-MT — ${novas.length} nova(s) proposição(ões)
+        🏛️ ${NOME_CASA} — ${novas.length} nova(s) proposição(ões)
       </h2>
-      <p style="color:#666;font-size:13px">Câmara Municipal de Cuiabá · Monitoramento automático · ${new Date().toLocaleString('pt-BR')}</p>
+      <p style="color:#666;font-size:13px">Monitoramento automático · ${new Date().toLocaleString('pt-BR')}</p>
       <table style="width:100%;border-collapse:collapse;font-size:14px">
         <thead>
           <tr style="background:#003366;color:white">
@@ -386,19 +407,33 @@ async function enviarEmail(novas) {
         <tbody>${linhas}</tbody>
       </table>
       <p style="margin-top:20px;font-size:12px;color:#999">
-        Acesse: <a href="https://legislativo.camaracuiaba.mt.gov.br/spl/consulta-producao.aspx?ano=${ANO}&ano_proposicao=${ANO}">Portal CMC-MT</a>
+        Acesse: <a href="https://legislativo.camaracuiaba.mt.gov.br/spl/consulta-producao.aspx?ano=${ANO}&ano_proposicao=${ANO}">Portal da Câmara Municipal de Cuiabá</a>
       </p>
     </div>
   `;
 
-  await transporter.sendMail({
-    from: `"Monitor CMC-MT" <${EMAIL_REMETENTE}>`,
-    to: EMAIL_DESTINO,
-    subject: `🏛️ CMC-MT: ${novas.length} nova(s) proposição(ões) — ${new Date().toLocaleDateString('pt-BR')}`,
-    html,
-  });
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_EMAIL; tentativa++) {
+    try {
+      await transporter.sendMail({
+        from: `"Monitor Câmara Municipal de Cuiabá" <${EMAIL_REMETENTE}>`,
+        to: EMAIL_DESTINO,
+        subject: `🏛️ Câmara Municipal de Cuiabá: ${novas.length} nova(s) proposição(ões) — ${new Date().toLocaleDateString('pt-BR')}`,
+        html,
+      });
 
-  console.log(`✅ Email enviado: ${novas.length} proposições novas.`);
+      console.log(`✅ Email enviado: ${novas.length} proposições novas.`);
+      return;
+    } catch (err) {
+      if (tentativa >= MAX_TENTATIVAS_EMAIL || !isTransientEmailError(err)) {
+        throw err;
+      }
+
+      const esperaMs = tentativa * 5000;
+      console.warn(`⚠️ Falha temporária ao enviar email (tentativa ${tentativa}/${MAX_TENTATIVAS_EMAIL}): ${err.message}`);
+      console.warn(`↻ Retentando em ${esperaMs / 1000}s...`);
+      await sleep(esperaMs);
+    }
+  }
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
