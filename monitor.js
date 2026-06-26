@@ -522,7 +522,7 @@ async function enviarEmail(novas) {
       await transporter.sendMail({
         from: `"Monitor Câmara Municipal de Cuiabá" <${EMAIL_REMETENTE}>`,
         to: EMAIL_DESTINO,
-        subject: `🏛️ Câmara Municipal de Cuiabá: ${novas.length} nova(s) proposição(ões) — ${new Date().toLocaleDateString('pt-BR')}`,
+        subject: `🏛️ Cuiabá: ${novas.length} nova(s) proposição(ões) — ${new Date().toLocaleDateString('pt-BR')}`,
         html,
       });
 
