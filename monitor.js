@@ -707,7 +707,7 @@ async function sincronizarRadar03(novas) {
     });
 
     const postResp = await fetch(CONTROLE03_STATE_URL, {
-      method: 'POST', headers: radar03AuthHeaders(), body: JSON.stringify({ data }),
+      method: 'POST', headers: radar03AuthHeaders(), body: JSON.stringify({ data, merge_casas: [CASA_RADAR03] }),
     });
     if (!postResp.ok) throw new Error('POST ' + postResp.status);
     console.log('✅ Radar 03 sincronizado: ' + CASA_RADAR03 + ' · ' + radar03BlocoEmail(novas));
