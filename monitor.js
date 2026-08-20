@@ -18,6 +18,8 @@ const NOME_CASA = 'Câmara Municipal de Cuiabá';
 const ANO = new Date().getFullYear();
 const ITENS_POR_PAGINA = 50;
 const MAX_PAGINAS_PRIMEIRO_RUN = 10; // 500 proposições no backlog inicial
+const MAX_PAGINAS_INCREMENTAL = Number(process.env.MAX_PAGINAS_INCREMENTAL || 5);
+const MAX_NOVIDADES_EMAIL = Number(process.env.MAX_NOVIDADES_EMAIL || 80);
 const MAX_TENTATIVAS_EMAIL = 3;
 
 // Tipos monitorados
@@ -59,6 +61,13 @@ function carregarEstado() {
 
 function salvarEstado(estado) {
   fs.writeFileSync(ARQUIVO_ESTADO, JSON.stringify(estado, null, 2));
+}
+
+class EstadoDefasadoError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'EstadoDefasadoError';
+  }
 }
 
 // ─── Parsing ──────────────────────────────────────────────────────────────────
@@ -302,16 +311,19 @@ async function buscarProposicoes(idsVistos, primeiroRun) {
   let estadoAtual = await mudarPara50Itens(inicial);
   await sleep(1500);
 
-  const todasNovas = estadoAtual.proposicoes.filter(p => !idsVistos.has(p.id));
+  let novasNaPagina = estadoAtual.proposicoes.filter(p => !idsVistos.has(p.id));
 
-  if (!primeiroRun && todasNovas.length === 0) {
+  if (!primeiroRun && novasNaPagina.length === 0) {
     console.log('✅ Nenhuma novidade na primeira página. Parando.');
     return [];
   }
 
   const todasProposicoes = [...estadoAtual.proposicoes];
   const totalPaginas = Math.ceil(inicial.total / ITENS_POR_PAGINA);
-  const maxPag = primeiroRun ? Math.min(MAX_PAGINAS_PRIMEIRO_RUN, totalPaginas) : totalPaginas;
+  const maxPag = primeiroRun
+    ? Math.min(MAX_PAGINAS_PRIMEIRO_RUN, totalPaginas)
+    : Math.min(MAX_PAGINAS_INCREMENTAL, totalPaginas);
+  let parouPorPaginaConhecida = false;
 
   for (let pag = 2; pag <= maxPag; pag++) {
     console.log(`📄 Página ${pag}/${maxPag}...`);
@@ -323,9 +335,10 @@ async function buscarProposicoes(idsVistos, primeiroRun) {
       todasProposicoes.push(...estadoAtual.proposicoes);
 
       if (!primeiroRun) {
-        const novas = estadoAtual.proposicoes.filter(p => !idsVistos.has(p.id));
-        if (novas.length === 0) {
+        novasNaPagina = estadoAtual.proposicoes.filter(p => !idsVistos.has(p.id));
+        if (novasNaPagina.length === 0) {
           console.log(`✅ Sem novidades na página ${pag}. Parando.`);
+          parouPorPaginaConhecida = true;
           break;
         }
       }
@@ -335,7 +348,25 @@ async function buscarProposicoes(idsVistos, primeiroRun) {
     }
   }
 
-  return todasProposicoes.filter(p => !idsVistos.has(p.id) && tipoMonitorado(p.tipo));
+  const novasMonitoradas = todasProposicoes.filter(p => !idsVistos.has(p.id) && tipoMonitorado(p.tipo));
+
+  if (!primeiroRun && !parouPorPaginaConhecida && maxPag < totalPaginas) {
+    throw new EstadoDefasadoError(
+      'Estado CMC-MT parece defasado: ' + maxPag + ' paginas recentes ainda tinham IDs nao vistos ' +
+      '(' + novasMonitoradas.length + ' proposicoes monitoradas novas ate aqui; total da fonte ~' + totalPaginas + ' paginas). ' +
+      'Execucao bloqueada para evitar varrer backlog gigante e enviar email estourado. ' +
+      'Proximo passo: revisar/resemear estado.json em rodada controlada antes de reativar envio.'
+    );
+  }
+
+  if (novasMonitoradas.length > MAX_NOVIDADES_EMAIL) {
+    throw new EstadoDefasadoError(
+      'CMC-MT gerou ' + novasMonitoradas.length + ' novidades monitoradas em uma rodada incremental. ' +
+      'Limite seguro: ' + MAX_NOVIDADES_EMAIL + '. Bloqueado para evitar email estourado; revisar estado.json antes de envio.'
+    );
+  }
+
+  return novasMonitoradas;
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
@@ -884,6 +915,9 @@ async function enviarEmail(novas) {
 
   } catch (err) {
     console.error(`❌ Erro fatal: ${err.message}`);
+    if (err instanceof EstadoDefasadoError) {
+      console.error(`::error title=CMC-MT estado defasado::${err.message}`);
+    }
     console.error(err.stack);
     process.exit(1);
   }
