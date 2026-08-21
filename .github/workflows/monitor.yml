@@ -29,7 +29,24 @@ jobs:
           CONTROLE03_API_USER: ${{ secrets.CONTROLE03_API_USER }}
           CONTROLE03_API_PASS: ${{ secrets.CONTROLE03_API_PASS }}
           CONTROLE03_STATE_URL: ${{ secrets.CONTROLE03_STATE_URL }}
-        run: node monitor.js
+        run: |
+          set +e
+          for tentativa in 1 2 3; do
+            node monitor.js
+            status=$?
+            if [ "$status" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$status" -ne 75 ]; then
+              exit "$status"
+            fi
+            if [ "$tentativa" -lt 3 ]; then
+              espera=$((tentativa * 600))
+              echo "Fonte instável. Retry $((tentativa + 1))/3 em $((espera / 60)) minuto(s)."
+              sleep "$espera"
+            fi
+          done
+          exit "$status"
 
       - name: Salvar estado
         run: |

@@ -21,6 +21,8 @@ const MAX_PAGINAS_PRIMEIRO_RUN = 10; // 500 proposições no backlog inicial
 const MAX_PAGINAS_INCREMENTAL = Number(process.env.MAX_PAGINAS_INCREMENTAL || 5);
 const MAX_NOVIDADES_EMAIL = Number(process.env.MAX_NOVIDADES_EMAIL || 80);
 const MAX_TENTATIVAS_EMAIL = 3;
+const EXIT_TRANSIENT_SOURCE = 75;
+const EXIT_OPERATIONAL_BLOCK = 78;
 
 // Tipos monitorados
 const TIPOS_MONITORADOS = [
@@ -67,6 +69,13 @@ class EstadoDefasadoError extends Error {
   constructor(message) {
     super(message);
     this.name = 'EstadoDefasadoError';
+  }
+}
+
+class FonteTransitoriaError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'FonteTransitoriaError';
   }
 }
 
@@ -170,6 +179,50 @@ const HEADERS_BASE = {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+function isTransientHttpStatus(status) {
+  return [408, 425, 429, 500, 502, 503, 504].includes(Number(status));
+}
+
+function isTransientNetworkError(err) {
+  const message = String((err && err.message) || '').toLowerCase();
+  return [
+    'fetch failed',
+    'econnreset',
+    'etimedout',
+    'eai_again',
+    'socket hang up',
+    'network',
+    'timeout',
+  ].some(fragment => message.includes(fragment));
+}
+
+async function fetchComRetry(url, options = {}, tentativas = 4) {
+  let ultimoErro = null;
+
+  for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
+    try {
+      const resp = await fetch(url, options);
+      if (resp.ok || !isTransientHttpStatus(resp.status) || tentativa === tentativas) {
+        return resp;
+      }
+
+      const texto = await resp.text().catch(() => '');
+      console.warn('⚠️ Fonte instável (' + resp.status + ' ' + resp.statusText + ') na tentativa ' + tentativa + '/' + tentativas + ': ' + texto.substring(0, 120));
+      ultimoErro = new FonteTransitoriaError('HTTP ' + resp.status + ' em fonte CMC-MT');
+    } catch (err) {
+      ultimoErro = err;
+      if (tentativa === tentativas || !isTransientNetworkError(err)) {
+        throw err;
+      }
+      console.warn('⚠️ Falha transitória de rede na tentativa ' + tentativa + '/' + tentativas + ': ' + err.message);
+    }
+
+    await sleep(15000 * tentativa);
+  }
+
+  throw ultimoErro || new FonteTransitoriaError('Falha transitória desconhecida na fonte CMC-MT');
+}
+
 function isTransientEmailError(err) {
   const responseCode = Number(err && err.responseCode);
   const message = String((err && err.message) || '').toLowerCase();
@@ -180,8 +233,12 @@ async function carregarPaginaInicial() {
   const url = `${URL_BASE}?ano=${ANO}&ano_proposicao=${ANO}`;
   console.log(`📥 Carregando página inicial: ${url}`);
 
-  const resp = await fetch(url, { headers: HEADERS_BASE });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} na página inicial`);
+  const resp = await fetchComRetry(url, { headers: HEADERS_BASE });
+  if (!resp.ok) {
+    const msg = `HTTP ${resp.status} na página inicial`;
+    if (isTransientHttpStatus(resp.status)) throw new FonteTransitoriaError(msg);
+    throw new Error(msg);
+  }
 
   const html = await resp.text();
   const viewState = extrairViewState(html);
@@ -219,7 +276,7 @@ async function mudarPara50Itens({ viewState, viewStateGen, eventValidation, cook
     '__ASYNCPOST': 'true',
   });
 
-  const resp = await fetch(`${URL_BASE}?ano=${ANO}&ano_proposicao=${ANO}`, {
+  const resp = await fetchComRetry(`${URL_BASE}?ano=${ANO}&ano_proposicao=${ANO}`, {
     method: 'POST',
     headers: {
       ...HEADERS_BASE,
@@ -232,7 +289,11 @@ async function mudarPara50Itens({ viewState, viewStateGen, eventValidation, cook
     body: body.toString(),
   });
 
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} ao mudar itens/página`);
+  if (!resp.ok) {
+    const msg = `HTTP ${resp.status} ao mudar itens/página`;
+    if (isTransientHttpStatus(resp.status)) throw new FonteTransitoriaError(msg);
+    throw new Error(msg);
+  }
 
   const texto = await resp.text();
   const novoViewState = extrairViewStateDeResposta(texto);
@@ -272,7 +333,7 @@ async function buscarPagina(numeroPagina, estadoAtual) {
     '__ASYNCPOST': 'true',
   });
 
-  const resp = await fetch(`${URL_BASE}?ano=${ANO}&ano_proposicao=${ANO}`, {
+  const resp = await fetchComRetry(`${URL_BASE}?ano=${ANO}&ano_proposicao=${ANO}`, {
     method: 'POST',
     headers: {
       ...HEADERS_BASE,
@@ -285,7 +346,11 @@ async function buscarPagina(numeroPagina, estadoAtual) {
     body: body.toString(),
   });
 
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} na página ${numeroPagina}`);
+  if (!resp.ok) {
+    const msg = `HTTP ${resp.status} na página ${numeroPagina}`;
+    if (isTransientHttpStatus(resp.status)) throw new FonteTransitoriaError(msg);
+    throw new Error(msg);
+  }
 
   const texto = await resp.text();
   const novoViewState = extrairViewStateDeResposta(texto);
@@ -343,6 +408,9 @@ async function buscarProposicoes(idsVistos, primeiroRun) {
         }
       }
     } catch (err) {
+      if (err instanceof FonteTransitoriaError || isTransientNetworkError(err)) {
+        throw err;
+      }
       console.error(`❌ Erro na página ${pag}: ${err.message}`);
       break;
     }
@@ -917,6 +985,11 @@ async function enviarEmail(novas) {
     console.error(`❌ Erro fatal: ${err.message}`);
     if (err instanceof EstadoDefasadoError) {
       console.error(`::error title=CMC-MT estado defasado::${err.message}`);
+      process.exit(EXIT_OPERATIONAL_BLOCK);
+    }
+    if (err instanceof FonteTransitoriaError || isTransientNetworkError(err)) {
+      console.error(`::warning title=CMC-MT fonte instável::${err.message}`);
+      process.exit(EXIT_TRANSIENT_SOURCE);
     }
     console.error(err.stack);
     process.exit(1);
