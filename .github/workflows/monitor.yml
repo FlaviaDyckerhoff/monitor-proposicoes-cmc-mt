@@ -5,6 +5,11 @@ env:
 
 on:
   workflow_dispatch:
+    inputs:
+      max_novidades_email:
+        description: "Limite máximo de novidades no email desta execução manual"
+        required: false
+        default: "80"
 
 jobs:
   monitorar:
@@ -29,6 +34,7 @@ jobs:
           CONTROLE03_API_USER: ${{ secrets.CONTROLE03_API_USER }}
           CONTROLE03_API_PASS: ${{ secrets.CONTROLE03_API_PASS }}
           CONTROLE03_STATE_URL: ${{ secrets.CONTROLE03_STATE_URL }}
+          MAX_NOVIDADES_EMAIL: ${{ github.event.inputs.max_novidades_email || '80' }}
         run: |
           set +e
           for tentativa in 1 2 3; do
