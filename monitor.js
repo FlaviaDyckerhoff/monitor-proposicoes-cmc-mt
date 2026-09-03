@@ -49,6 +49,7 @@ const ITENS_POR_PAGINA = 50;
 const MAX_PAGINAS_PRIMEIRO_RUN = 10; // 500 proposições no backlog inicial
 const MAX_PAGINAS_INCREMENTAL = Number(process.env.MAX_PAGINAS_INCREMENTAL || 5);
 const MAX_NOVIDADES_EMAIL = Number(process.env.MAX_NOVIDADES_EMAIL || 80);
+const CATCHUP_EXCLUDE_INDICACOES = String(process.env.CATCHUP_EXCLUDE_INDICACOES || '').trim() === '1';
 const MAX_TENTATIVAS_EMAIL = 3;
 const EXIT_TRANSIENT_SOURCE = 75;
 const EXIT_OPERATIONAL_BLOCK = 78;
@@ -206,6 +207,25 @@ function parseProposicoes(html) {
   }
 
   return proposicoes;
+}
+
+function separarLoteEmail(proposicoes) {
+  if (!CATCHUP_EXCLUDE_INDICACOES) {
+    return { paraEmail: proposicoes, baselineSemEmail: [] };
+  }
+
+  const baselineSemEmail = [];
+  const paraEmail = [];
+  for (const proposicao of proposicoes) {
+    const tipo = String(proposicao.tipo || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+    if (/^indicacao\b/.test(tipo)) baselineSemEmail.push(proposicao);
+    else paraEmail.push(proposicao);
+  }
+  return { paraEmail, baselineSemEmail };
 }
 
 // ─── Requisições ──────────────────────────────────────────────────────────────
@@ -475,9 +495,10 @@ async function buscarProposicoes(idsVistos, primeiroRun) {
     );
   }
 
-  if (novasMonitoradas.length > MAX_NOVIDADES_EMAIL) {
+  const { paraEmail } = separarLoteEmail(novasMonitoradas);
+  if (paraEmail.length > MAX_NOVIDADES_EMAIL) {
     throw new EstadoDefasadoError(
-      'CMC-MT gerou ' + novasMonitoradas.length + ' novidades monitoradas em uma rodada incremental. ' +
+      'CMC-MT gerou ' + paraEmail.length + ' novidades para email em uma rodada incremental. ' +
       'Limite seguro: ' + MAX_NOVIDADES_EMAIL + '. Bloqueado para evitar email estourado; revisar estado.json antes de envio.'
     );
   }
@@ -1017,9 +1038,16 @@ async function enviarEmail(novas) {
     const novas = await buscarProposicoes(idsVistos, primeiroRun);
     console.log(`🆕 Proposições novas (tipos monitorados): ${novas.length}`);
 
+    const { paraEmail, baselineSemEmail } = separarLoteEmail(novas);
+    if (baselineSemEmail.length > 0) {
+      console.log(`📌 Catch-up controlado: ${baselineSemEmail.length} indicação(ões) irão apenas para o baseline; ${paraEmail.length} item(ns) seguem para email/Radar 03.`);
+    }
+
+    if (paraEmail.length > 0) {
+      await sincronizarRadar03(paraEmail);
+      await enviarEmail(paraEmail);
+    }
     if (novas.length > 0) {
-      await sincronizarRadar03(novas);
-    await enviarEmail(novas);
       novas.forEach(p => idsVistos.add(String(p.id)));
     } else {
       console.log('✅ Sem novidades nos tipos monitorados. Nada a enviar.');

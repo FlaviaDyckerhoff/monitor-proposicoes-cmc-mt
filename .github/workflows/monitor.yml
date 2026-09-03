@@ -10,6 +10,14 @@ on:
         description: "Limite máximo de novidades no email desta execução manual"
         required: false
         default: "80"
+      max_paginas_incremental:
+        description: "Máximo de páginas no catch-up manual"
+        required: false
+        default: "5"
+      catchup_exclude_indicacoes:
+        description: "No catch-up, enviar somente tipos diferentes de Indicação e marcar Indicações como baseline"
+        required: false
+        default: "0"
 
 jobs:
   monitorar:
@@ -35,6 +43,8 @@ jobs:
           CONTROLE03_API_PASS: ${{ secrets.CONTROLE03_API_PASS }}
           CONTROLE03_STATE_URL: ${{ secrets.CONTROLE03_STATE_URL }}
           MAX_NOVIDADES_EMAIL: ${{ github.event.inputs.max_novidades_email || '80' }}
+          MAX_PAGINAS_INCREMENTAL: ${{ github.event.inputs.max_paginas_incremental || '5' }}
+          CATCHUP_EXCLUDE_INDICACOES: ${{ github.event.inputs.catchup_exclude_indicacoes || '0' }}
         run: |
           set +e
           for tentativa in 1 2 3; do
