@@ -154,6 +154,17 @@ function extrairHtmlUpdatePanel(resposta) {
   return resposta.substring(inicio);
 }
 
+function extrairAlvosPaginacao(html) {
+  const alvos = {};
+  const normalizado = String(html || '').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  const regex = /__doPostBack\('([^']+rptPaging[^']+lbPaging)',''\)[^>]*>\s*(\d+)\s*<\/a>/gi;
+  let match;
+  while ((match = regex.exec(normalizado)) !== null) {
+    alvos[match[2]] = match[1];
+  }
+  return alvos;
+}
+
 function parseProposicoes(html) {
   const proposicoes = [];
   const blocos = html.split('kt-widget5__item');
@@ -337,14 +348,17 @@ async function mudarPara50Itens({ viewState, viewStateGen, eventValidation, cook
     viewStateGen,
     eventValidation: novoEventValidation || eventValidation,
     proposicoes,
+    pageTargets: extrairAlvosPaginacao(htmlPanel),
     cookies,
   };
 }
 
 async function buscarPagina(numeroPagina, estadoAtual) {
-  const { viewState, viewStateGen, eventValidation, cookies } = estadoAtual;
-  const idx = String(numeroPagina - 1).padStart(2, '0');
-  const eventoTarget = `ctl00$ContentPlaceHolder1$rptPaging$ctl${idx}$lbPaging`;
+  const { viewState, viewStateGen, eventValidation, cookies, pageTargets = {} } = estadoAtual;
+  const eventoTarget = pageTargets[String(numeroPagina)];
+  if (!eventoTarget) {
+    throw new Error(`Paginacao CMC-MT sem alvo para a pagina ${numeroPagina}; links disponiveis: ${Object.keys(pageTargets).join(', ') || 'nenhum'}`);
+  }
 
   const body = new URLSearchParams({
     'ctl00$scm_principal': `ctl00$ContentPlaceHolder1$upp_consultaProducao|${eventoTarget}`,
@@ -386,12 +400,17 @@ async function buscarPagina(numeroPagina, estadoAtual) {
   const novoEventValidation = extrairEventValidationDeResposta(texto);
   const htmlPanel = extrairHtmlUpdatePanel(texto);
   const proposicoes = htmlPanel ? parseProposicoes(htmlPanel) : [];
+  const idsAnteriores = new Set((estadoAtual.proposicoes || []).map(item => String(item.id)));
+  if (proposicoes.length > 0 && proposicoes.every(item => idsAnteriores.has(String(item.id)))) {
+    throw new Error(`Paginacao CMC-MT nao avancou para a pagina ${numeroPagina}; resposta repetiu a pagina anterior`);
+  }
 
   return {
     viewState: novoViewState || viewState,
     viewStateGen,
     eventValidation: novoEventValidation || eventValidation,
     proposicoes,
+    pageTargets: extrairAlvosPaginacao(htmlPanel),
     cookies,
   };
 }
