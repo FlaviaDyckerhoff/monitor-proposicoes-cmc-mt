@@ -50,6 +50,7 @@ const MAX_PAGINAS_PRIMEIRO_RUN = 10; // 500 proposições no backlog inicial
 const MAX_PAGINAS_INCREMENTAL = Number(process.env.MAX_PAGINAS_INCREMENTAL || 5);
 const MAX_NOVIDADES_EMAIL = Number(process.env.MAX_NOVIDADES_EMAIL || 80);
 const CATCHUP_EXCLUDE_INDICACOES = String(process.env.CATCHUP_EXCLUDE_INDICACOES || '').trim() === '1';
+const CATCHUP_CONTROLE03_ONLY = String(process.env.CATCHUP_CONTROLE03_ONLY || '').trim() === '1';
 const MAX_TENTATIVAS_EMAIL = 3;
 const EXIT_TRANSIENT_SOURCE = 75;
 const EXIT_OPERATIONAL_BLOCK = 78;
@@ -1045,7 +1046,11 @@ async function main() {
 
     if (paraEmail.length > 0) {
       await sincronizarRadar03(paraEmail);
-      await enviarEmail(paraEmail);
+      if (CATCHUP_CONTROLE03_ONLY) {
+        console.log(`📌 Catch-up controlado: ${paraEmail.length} item(ns) enviados ao Radar 03 sem email.`);
+      } else {
+        await enviarEmail(paraEmail);
+      }
     }
     if (novas.length > 0) {
       novas.forEach(p => idsVistos.add(String(p.id)));

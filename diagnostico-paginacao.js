@@ -46,6 +46,17 @@ async function main() {
     desconhecidas: novas.length,
     monitoradas: monitoradas.length,
     porTipo,
+    materiais: monitoradas
+      .filter(item => !/^indica[cç][aã]o$/i.test(String(item.tipo || '')))
+      .map(item => ({
+        id: item.id,
+        tipo: item.tipo,
+        numero: item.numero,
+        data: item.data,
+        autor: item.autor,
+        ementa: item.ementa,
+        url: item.url,
+      })),
   }, null, 2));
 }
 
