@@ -810,7 +810,7 @@ function radar03DetalhesControle03(rec) {
 
 async function sincronizarRadar03(novas) {
   const resumo = radar03AgruparNovidades(novas);
-  if (!resumo.length) return;
+  if (!resumo.length) return true;
   try {
     const getResp = await fetch(CONTROLE03_STATE_URL, { headers: radar03AuthHeaders() });
     if (!getResp.ok) throw new Error('GET ' + getResp.status);
@@ -876,12 +876,14 @@ async function sincronizarRadar03(novas) {
     });
 
     const postResp = await fetch(CONTROLE03_STATE_URL, {
-      method: 'POST', headers: radar03AuthHeaders(), body: JSON.stringify({ data, merge_casas: [CASA_RADAR03] }),
+      method: 'POST', headers: radar03AuthHeaders(), body: JSON.stringify({ data: [casa], merge_casas: [CASA_RADAR03] }),
     });
     if (!postResp.ok) throw new Error('POST ' + postResp.status);
     console.log('✅ Radar 03 sincronizado: ' + CASA_RADAR03 + ' · ' + radar03BlocoEmail(novas));
+    return true;
   } catch (err) {
     console.warn('⚠️ Não foi possível sincronizar o Radar 03 automaticamente: ' + err.message);
+    return false;
   }
 }
 
@@ -1045,8 +1047,9 @@ async function main() {
     }
 
     if (paraEmail.length > 0) {
-      await sincronizarRadar03(paraEmail);
+      const sincronizado = await sincronizarRadar03(paraEmail);
       if (CATCHUP_CONTROLE03_ONLY) {
+        if (!sincronizado) throw new Error('Catch-up CMC-MT bloqueado: Controle 03 não confirmou a gravação');
         console.log(`📌 Catch-up controlado: ${paraEmail.length} item(ns) enviados ao Radar 03 sem email.`);
       } else {
         await enviarEmail(paraEmail);
@@ -1088,4 +1091,5 @@ module.exports = {
   parseProposicoes,
   extrairAlvosPaginacao,
   tipoMonitorado,
+  sincronizarRadar03,
 };

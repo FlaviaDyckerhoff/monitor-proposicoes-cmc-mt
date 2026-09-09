@@ -22,6 +22,10 @@ on:
         description: "No catch-up, atualizar o Controle 03 sem enviar email"
         required: false
         default: "0"
+      controle03_recovery_ids:
+        description: "IDs para recuperar somente no Controle 03, separados por vírgula"
+        required: false
+        default: ""
 
 jobs:
   monitorar:
@@ -50,7 +54,12 @@ jobs:
           MAX_PAGINAS_INCREMENTAL: ${{ github.event.inputs.max_paginas_incremental || '5' }}
           CATCHUP_EXCLUDE_INDICACOES: ${{ github.event.inputs.catchup_exclude_indicacoes || '0' }}
           CATCHUP_CONTROLE03_ONLY: ${{ github.event.inputs.catchup_controle03_only || '0' }}
+          CONTROLE03_RECOVERY_IDS: ${{ github.event.inputs.controle03_recovery_ids || '' }}
         run: |
+          if [ -n "$CONTROLE03_RECOVERY_IDS" ]; then
+            node recuperar-controle03.js
+            exit $?
+          fi
           set +e
           for tentativa in 1 2 3; do
             node monitor.js
