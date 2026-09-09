@@ -422,7 +422,7 @@ async function buscarPagina(numeroPagina, estadoAtual) {
   const proposicoes = htmlPanel ? parseProposicoes(htmlPanel) : [];
   const idsAnteriores = new Set((estadoAtual.proposicoes || []).map(item => String(item.id)));
   if (proposicoes.length > 0 && proposicoes.every(item => idsAnteriores.has(String(item.id)))) {
-    throw new Error(`Paginacao CMC-MT nao avancou para a pagina ${numeroPagina}; resposta repetiu a pagina anterior`);
+    throw new FonteTransitoriaError(`Paginacao CMC-MT nao avancou para a pagina ${numeroPagina}; resposta repetiu a pagina anterior`);
   }
 
   return {
@@ -1023,7 +1023,7 @@ async function enviarEmail(novas) {
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-(async () => {
+async function main() {
   console.log('🚀 Monitor CMC-MT iniciado');
   console.log(`⏰ ${new Date().toLocaleString('pt-BR')}`);
   console.log(`🔍 Tipos monitorados: ${TIPOS_MONITORADOS.length}`);
@@ -1070,4 +1070,17 @@ async function enviarEmail(novas) {
     console.error(err.stack);
     process.exit(1);
   }
-})();
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  carregarPaginaInicial,
+  mudarPara50Itens,
+  buscarPagina,
+  parseProposicoes,
+  extrairAlvosPaginacao,
+  tipoMonitorado,
+};
