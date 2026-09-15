@@ -22,7 +22,7 @@ Monitora automaticamente o portal da Câmara Municipal de Cuiabá-MT e envia ema
 - Requerimento de Audiência Pública
 - Requerimento de Instauração de Comissão Parlamentar de Inquérito
 
-Todos os outros tipos (Moções, Requerimentos de Sessão, Urgência, etc.) são ignorados — não geram email, mas são marcados como vistos para não reaparecer em runs futuros.
+Todos os outros tipos (Moções, Requerimentos de Sessão, Urgência, etc.) são ignorados — não geram email, mas são marcados como vistos para não reaparecer em runs futuros. A busca incremental percorre até 12 páginas para reencontrar o cursor conhecido; se não reencontrar, bloqueia sem enviar.
 
 ---
 

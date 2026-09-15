@@ -4,7 +4,8 @@
   "description": "Monitor automático de proposições da Câmara Municipal de Cuiabá-MT",
   "main": "monitor.js",
   "scripts": {
-    "start": "node monitor.js"
+    "start": "node monitor.js",
+    "test": "node estado-cursor.test.js"
   },
   "dependencies": {
     "nodemailer": "^6.9.0"

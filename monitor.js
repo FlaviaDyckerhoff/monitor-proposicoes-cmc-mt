@@ -10,6 +10,7 @@ function fichaEmailButtonHtml() {
 
 const fs = require('fs');
 const nodemailer = require('nodemailer');
+const { registrarIdsObservados } = require('./estado-cursor');
 let promoverInteresseClienteProposicao = (_item, atuais) => Array.isArray(atuais) ? atuais : [];
 try {
   try {
@@ -47,10 +48,11 @@ const NOME_CASA = 'Câmara Municipal de Cuiabá';
 const ANO = new Date().getFullYear();
 const ITENS_POR_PAGINA = 50;
 const MAX_PAGINAS_PRIMEIRO_RUN = 10; // 500 proposições no backlog inicial
-const MAX_PAGINAS_INCREMENTAL = Number(process.env.MAX_PAGINAS_INCREMENTAL || 5);
+const MAX_PAGINAS_INCREMENTAL = Number(process.env.MAX_PAGINAS_INCREMENTAL || 12);
 const MAX_NOVIDADES_EMAIL = Number(process.env.MAX_NOVIDADES_EMAIL || 80);
 const CATCHUP_EXCLUDE_INDICACOES = String(process.env.CATCHUP_EXCLUDE_INDICACOES || '').trim() === '1';
 const CATCHUP_CONTROLE03_ONLY = String(process.env.CATCHUP_CONTROLE03_ONLY || '').trim() === '1';
+const BASELINE_NAO_MONITORADOS = String(process.env.BASELINE_NAO_MONITORADOS || '').trim() === '1';
 const MAX_TENTATIVAS_EMAIL = 3;
 const EXIT_TRANSIENT_SOURCE = 75;
 const EXIT_OPERATIONAL_BLOCK = 78;
@@ -503,6 +505,18 @@ async function buscarProposicoes(idsVistos, primeiroRun) {
       'Limite seguro: ' + MAX_NOVIDADES_EMAIL + '. Bloqueado para evitar email estourado; revisar estado.json antes de envio.'
     );
   }
+
+  if (BASELINE_NAO_MONITORADOS && novasMonitoradas.length > 0) {
+    throw new EstadoDefasadoError(
+      'Baseline silencioso bloqueado: foram encontradas ' + novasMonitoradas.length +
+      ' proposicoes novas de tipos monitorados. Revisar o lote antes de qualquer envio.'
+    );
+  }
+
+  // O cursor precisa registrar todos os IDs observados, inclusive tipos que não
+  // geram alerta. Sem isso, esses itens reaparecem eternamente como "novos",
+  // empurram a paginação e produzem falso erro de estado defasado.
+  registrarIdsObservados(idsVistos, todasProposicoes);
 
   return novasMonitoradas;
 }
