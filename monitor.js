@@ -507,9 +507,14 @@ async function buscarProposicoes(idsVistos, primeiroRun) {
   }
 
   if (BASELINE_NAO_MONITORADOS && novasMonitoradas.length > 0) {
+    const resumo = novasMonitoradas
+      .slice(0, 20)
+      .map(p => `${p.tipo} nº ${p.numero} (ID ${p.id})`)
+      .join('; ');
     throw new EstadoDefasadoError(
       'Baseline silencioso bloqueado: foram encontradas ' + novasMonitoradas.length +
-      ' proposicoes novas de tipos monitorados. Revisar o lote antes de qualquer envio.'
+      ' proposicoes novas de tipos monitorados: ' + resumo +
+      '. Revisar o lote antes de qualquer envio.'
     );
   }
 
