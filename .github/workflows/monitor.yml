@@ -13,13 +13,17 @@ on:
       max_paginas_incremental:
         description: "Máximo de páginas no catch-up manual"
         required: false
-        default: "12"
+        default: "30"
       baseline_nao_monitorados:
         description: "Baseline silencioso apenas de tipos não monitorados; bloqueia se encontrar item monitorado novo"
         required: false
         default: "0"
       catchup_exclude_indicacoes:
-        description: "No catch-up, enviar somente tipos diferentes de Indicação e marcar Indicações como baseline"
+        description: "Registrar Indicações apenas no cursor, sem email nem Radar 03"
+        required: false
+        default: "1"
+      dry_run:
+        description: "Executar leitura e classificação sem email, Radar 03 ou alteração do estado"
         required: false
         default: "0"
       catchup_controle03_only:
@@ -55,11 +59,12 @@ jobs:
           CONTROLE03_API_PASS: ${{ secrets.CONTROLE03_API_PASS }}
           CONTROLE03_STATE_URL: ${{ secrets.CONTROLE03_STATE_URL }}
           MAX_NOVIDADES_EMAIL: ${{ github.event.inputs.max_novidades_email || '80' }}
-          MAX_PAGINAS_INCREMENTAL: ${{ github.event.inputs.max_paginas_incremental || '12' }}
+          MAX_PAGINAS_INCREMENTAL: ${{ github.event.inputs.max_paginas_incremental || '30' }}
           BASELINE_NAO_MONITORADOS: ${{ github.event.inputs.baseline_nao_monitorados || '0' }}
-          CATCHUP_EXCLUDE_INDICACOES: ${{ github.event.inputs.catchup_exclude_indicacoes || '0' }}
+          CATCHUP_EXCLUDE_INDICACOES: ${{ github.event.inputs.catchup_exclude_indicacoes || '1' }}
           CATCHUP_CONTROLE03_ONLY: ${{ github.event.inputs.catchup_controle03_only || '0' }}
           CONTROLE03_RECOVERY_IDS: ${{ github.event.inputs.controle03_recovery_ids || '' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
         run: |
           if [ -n "$CONTROLE03_RECOVERY_IDS" ]; then
             node recuperar-controle03.js

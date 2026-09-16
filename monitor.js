@@ -48,11 +48,12 @@ const NOME_CASA = 'Câmara Municipal de Cuiabá';
 const ANO = new Date().getFullYear();
 const ITENS_POR_PAGINA = 50;
 const MAX_PAGINAS_PRIMEIRO_RUN = 10; // 500 proposições no backlog inicial
-const MAX_PAGINAS_INCREMENTAL = Number(process.env.MAX_PAGINAS_INCREMENTAL || 12);
+const MAX_PAGINAS_INCREMENTAL = Number(process.env.MAX_PAGINAS_INCREMENTAL || 30);
 const MAX_NOVIDADES_EMAIL = Number(process.env.MAX_NOVIDADES_EMAIL || 80);
-const CATCHUP_EXCLUDE_INDICACOES = String(process.env.CATCHUP_EXCLUDE_INDICACOES || '').trim() === '1';
+const CATCHUP_EXCLUDE_INDICACOES = String(process.env.CATCHUP_EXCLUDE_INDICACOES ?? '1').trim() === '1';
 const CATCHUP_CONTROLE03_ONLY = String(process.env.CATCHUP_CONTROLE03_ONLY || '').trim() === '1';
 const BASELINE_NAO_MONITORADOS = String(process.env.BASELINE_NAO_MONITORADOS || '').trim() === '1';
+const DRY_RUN = String(process.env.DRY_RUN || '').trim() === '1';
 const MAX_TENTATIVAS_EMAIL = 3;
 const EXIT_TRANSIENT_SOURCE = 75;
 const EXIT_OPERATIONAL_BLOCK = 78;
@@ -212,8 +213,8 @@ function parseProposicoes(html) {
   return proposicoes;
 }
 
-function separarLoteEmail(proposicoes) {
-  if (!CATCHUP_EXCLUDE_INDICACOES) {
+function separarLoteEmail(proposicoes, excluirIndicacoes = CATCHUP_EXCLUDE_INDICACOES) {
+  if (!excluirIndicacoes) {
     return { paraEmail: proposicoes, baselineSemEmail: [] };
   }
 
@@ -1062,7 +1063,12 @@ async function main() {
 
     const { paraEmail, baselineSemEmail } = separarLoteEmail(novas);
     if (baselineSemEmail.length > 0) {
-      console.log(`📌 Catch-up controlado: ${baselineSemEmail.length} indicação(ões) irão apenas para o baseline; ${paraEmail.length} item(ns) seguem para email/Radar 03.`);
+      console.log(`📌 Baseline silencioso: ${baselineSemEmail.length} indicação(ões) serão registradas no cursor sem email/Radar 03; ${paraEmail.length} item(ns) relevantes seguem no fluxo normal.`);
+    }
+
+    if (DRY_RUN) {
+      console.log(`🧪 Dry-run: ${paraEmail.length} item(ns) relevantes e ${baselineSemEmail.length} indicação(ões) de baseline; sem email, Radar 03 ou alteração de estado.`);
+      return;
     }
 
     if (paraEmail.length > 0) {
@@ -1110,5 +1116,6 @@ module.exports = {
   parseProposicoes,
   extrairAlvosPaginacao,
   tipoMonitorado,
+  separarLoteEmail,
   sincronizarRadar03,
 };
